@@ -125,18 +125,19 @@ export default function DashboardPage() {
     if (!confirm("Delete this product?")) return;
 
     try {
-      const res = await fetch(`/api/products/${id}`, {
-        method: "DELETE",
-      });
-
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
       if (res.ok) {
         setProducts((prev) => prev.filter((p) => p.id !== id));
-        const { [id]: _, ...rest } = generatedPosts;
-        setGeneratedPosts(rest);
         showToast("Product deleted.", "success");
       } else {
-        const data = await res.json();
-        showToast(data.message || data.error || "Delete failed", "error");
+        let message = "Delete failed";
+        try {
+          const data = await res.json();
+          message = data.message || data.error || message;
+        } catch {
+          // response wasn't JSON, ignore
+        }
+        showToast(message, "error");
       }
     } catch (err) {
       console.error(err);
@@ -264,7 +265,10 @@ export default function DashboardPage() {
 
         {/* RIGHT COLUMN: products list */}
         <section className="flex-1 space-y-4">
-          <h2 className="text-lg font-semibold text-slate-900">Your products</h2>
+          <h2 className="text-lg font-semibold text-white drop-shadow-md">
+            Your products
+          </h2>
+
 
           {products.length === 0 && (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
