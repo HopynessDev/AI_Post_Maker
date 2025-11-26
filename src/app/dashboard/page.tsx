@@ -5,51 +5,52 @@ import { useEffect, useState } from "react";
 type Product = {
   id: number;
   url: string;
-  createdAt: string;
   title?: string | null;
   description?: string | null;
-  price?: string | null;
   imageUrl?: string | null;
+  price?: string | null;
   vendor?: string | null;
   productType?: string | null;
-  variants?: string | null; // JSON string from DB
-  options?: string | null;  // JSON string from DB
+  createdAt?: string;
 };
 
-type GeneratedPost = {
-  title: string;
-  body: string;
-  subreddit?: string;
-};
-
-export default function Dashboard() {
-  const [url, setUrl] = useState("");
+export default function DashboardPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [message, setMessage] = useState("");
-  const [generatedPostsByProduct, setGeneratedPostsByProduct] = useState<
-    Record<number, GeneratedPost[]>
-  >({});
-  const [generatingFor, setGeneratingFor] = useState<number | null>(null);
+  const [url, setUrl] = useState("");
   const [postStyle, setPostStyle] = useState("default");
+  const [loadingAdd, setLoadingAdd] = useState(false);
+  const [generateId, setGenerateId] = useState<number | null>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  async function loadProducts() {
-    try {
-      const res = await fetch("/api/products");
-      if (!res.ok) return;
-      const data = await res.json();
-      setProducts(data.products);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
+  // Load products on mount
   useEffect(() => {
-    loadProducts();
+    async function load() {
+      try {
+        const res = await fetch("/api/products");
+        const data = await res.json();
+
+        // Handle both { products: [...] } and plain array just in case
+        if (Array.isArray(data)) {
+          setProducts(data);
+        } else if (Array.isArray(data.products)) {
+          setProducts(data.products);
+        } else {
+          setProducts([]);
+        }
+      } catch (err) {
+        console.error("Failed to load products", err);
+        setProducts([]);
+      }
+    }
+    load();
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  // Add product (via modal)
+  async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
-    setMessage("");
+    if (!url) return;
+
+    setLoadingAdd(true);
 
     try {
       const res = await fetch("/api/products", {
@@ -59,80 +60,68 @@ export default function Dashboard() {
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        setMessage(data.message || "Something went wrong");
-        return;
+      if (res.ok) {
+        const newProduct: Product = data.product || data;
+        setProducts((prev) => [newProduct, ...prev]);
+        setUrl("");
+        setIsAddModalOpen(false);
+      } else {
+        alert(data.message || data.error || "Failed to add product");
       }
-
-      setMessage("Product saved!");
-      setUrl("");
-      loadProducts();
     } catch (err) {
       console.error(err);
-      setMessage("Something went wrong");
+      alert("Error adding product");
+    } finally {
+      setLoadingAdd(false);
     }
   }
 
+  // Scrape product
   async function handleScrape(id: number) {
-    setMessage("");
-
     try {
       const res = await fetch(`/api/products/${id}/scrape`, {
         method: "POST",
       });
-
       const data = await res.json();
 
-      if (!res.ok) {
-        setMessage(data.message || "Failed to scrape product");
-        return;
+      if (res.ok) {
+        const updated: Product = data.product || data;
+        setProducts((prev) =>
+          prev.map((p) => (p.id === id ? { ...p, ...updated } : p))
+        );
+      } else {
+        alert(data.message || data.error || "Scrape failed");
       }
-
-      setMessage("Product scraped!");
-      loadProducts();
     } catch (err) {
       console.error(err);
-      setMessage("Failed to scrape product");
+      alert("Scrape error");
     }
   }
 
+  // Delete product
   async function handleDelete(id: number) {
-    setMessage("");
+    if (!confirm("Delete this product?")) return;
 
     try {
-      const res = await fetch("/api/products", {
+      const res = await fetch(`/api/products/${id}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMessage(data.message || "Failed to delete product");
-        return;
+      if (res.ok) {
+        setProducts((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        const data = await res.json();
+        alert(data.message || data.error || "Delete failed");
       }
-
-      setMessage("Product deleted!");
-      setProducts((prev) => prev.filter((p) => p.id !== id));
-
-      // Also remove any generated posts for that product
-      setGeneratedPostsByProduct((prev) => {
-        const clone = { ...prev };
-        delete clone[id];
-        return clone;
-      });
     } catch (err) {
       console.error(err);
-      setMessage("Failed to delete product");
+      alert("Delete error");
     }
   }
 
+  // Generate Reddit posts
   async function handleGeneratePosts(id: number) {
-    setMessage("");
-    setGeneratingFor(id);
-
+    setGenerateId(id);
     try {
       const res = await fetch(`/api/products/${id}/generate-posts`, {
         method: "POST",
@@ -140,261 +129,273 @@ export default function Dashboard() {
         body: JSON.stringify({ style: postStyle }),
       });
 
-
       const data = await res.json();
 
-      if (!res.ok) {
-        setMessage(data.message || "Failed to generate Reddit posts");
-        setGeneratingFor(null);
-        return;
+      if (res.ok) {
+        // You probably already show these somewhere in the UI
+        console.log("Generated posts:", data);
+        alert("Reddit posts generated successfully!");
+      } else {
+        alert(data.message || data.error || "Generation failed");
       }
-
-      setGeneratedPostsByProduct((prev) => ({
-        ...prev,
-        [id]: data.posts || [],
-      }));
-
-      setMessage("Reddit posts generated!");
-    } catch (err) {
-      console.error(err);
-      setMessage("Failed to generate Reddit posts");
+    } catch (e) {
+      console.error(e);
+      alert("Error generating posts");
     } finally {
-      setGeneratingFor(null);
+      setGenerateId(null);
     }
   }
 
   return (
-    <div className="p-10 max-w-4xl mx-auto space-y-6">
-      <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
-      <p className="text-sm text-gray-600 mb-4">
-        Add a Shopify product URL, scrape its data, and generate Reddit posts.
-      </p>
+    <div className="min-h-screen">
+      {/* NAVBAR */}
+      <header className="border-b border-slate-200/70 bg-white/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-500 text-sm font-bold text-white shadow-md">
+              AI
+            </div>
+            <div>
+              <div className="text-sm font-semibold tracking-tight text-slate-900">
+                AI Post Maker
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Shopify → Reddit content engine
+              </div>
+            </div>
+          </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <span className="font-medium">Reddit post style:</span>
-        <select
-          value={postStyle}
-          onChange={(e) => setPostStyle(e.target.value)}
-          className="border rounded px-2 py-1 text-sm bg-black text-white"
-        >
-          <option value="default" className="bg-black text-white">Default mix</option>
-          <option value="review" className="bg-black text-white">Personal review</option>
-          <option value="question" className="bg-black text-white">Question / discussion</option>
-          <option value="story" className="bg-black text-white">Story / experience</option>
-        </select>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-slate-800 transition"
+            >
+              + Add product
+            </button>
+            <a
+              href="/login"
+              className="rounded-full border border-slate-300 bg-white px-4 py-2.5 text-xs font-medium text-slate-700 hover:border-slate-400 hover:bg-slate-50 transition"
+            >
+              Log out
+            </a>
+          </div>
+        </div>
+      </header>
 
-      </div>
+      {/* MAIN CONTENT */}
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row">
+        {/* LEFT COLUMN: style selector */}
+        <section className="w-full lg:w-[340px] shrink-0 space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold mb-2 text-slate-900">
+              Reddit post style
+            </h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Choose the tone Gemini should use when generating posts.
+            </p>
 
-      <p className="text-sm text-gray-600 mb-4">
-        Add a Shopify product URL, scrape its data, and generate Reddit posts.
-      </p>
+            <select
+              value={postStyle}
+              onChange={(e) => setPostStyle(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 bg-black px-3 py-3 text-sm text-white"
+            >
+              <option className="bg-black text-white" value="default">
+                Default mix
+              </option>
+              <option className="bg-black text-white" value="review">
+                Personal review
+              </option>
+              <option className="bg-black text-white" value="question">
+                Question / discussion
+              </option>
+              <option className="bg-black text-white" value="story">
+                Story / experience
+              </option>
+            </select>
+          </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3 border rounded p-4">
-        <label className="block">
-          <span className="font-medium">Shopify product URL</span>
-          <input
-            type="url"
-            required
-            className="mt-1 w-full border rounded p-2"
-            placeholder="https://yourstore.com/products/..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </label>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm text-xs text-slate-600 space-y-2">
+            <div className="font-semibold text-slate-900">
+              How the workflow works
+            </div>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Click &quot;Add product&quot; to paste a Shopify URL.</li>
+              <li>Scrape the product once it&apos;s added.</li>
+              <li>Generate Reddit posts using the scraped data.</li>
+            </ol>
+          </div>
+        </section>
 
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Save product
-        </button>
-      </form>
+        {/* RIGHT COLUMN: products list */}
+        <section className="flex-1 space-y-4">
+          <h2 className="text-lg font-semibold text-slate-900">Your products</h2>
 
-      {message && <p className="text-sm text-green-700">{message}</p>}
+          {products.length === 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
+              You don&apos;t have any products yet.
+              <br />
+              Click <span className="font-semibold">“Add product”</span> in the
+              top right to get started.
+            </div>
+          )}
 
-      <div className="mt-6">
-        <h2 className="text-xl font-semibold mb-2">Saved products</h2>
-
-        {products.length === 0 && (
-          <p className="text-sm text-gray-600">
-            No products yet. Add your first Shopify URL above.
-          </p>
-        )}
-
-        <ul className="space-y-4">
           {products.map((p) => {
-            // Parse variants
-            let parsedVariants: any[] = [];
-            if (p.variants) {
-              try {
-                const v = JSON.parse(p.variants);
-                if (Array.isArray(v)) parsedVariants = v;
-              } catch {
-                parsedVariants = [];
-              }
-            }
-
-            // Parse options
-            let parsedOptions: any[] = [];
-            if (p.options) {
-              try {
-                const o = JSON.parse(p.options);
-                if (Array.isArray(o)) parsedOptions = o;
-              } catch {
-                parsedOptions = [];
-              }
-            }
-
-            const posts = generatedPostsByProduct[p.id] || [];
+            const scraped = Boolean(p.title || p.description);
 
             return (
-              <li
+              <div
                 key={p.id}
-                className="border rounded p-3 text-sm flex flex-col gap-3"
+                className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col gap-4"
               >
-                <div className="flex justify-between items-start gap-4">
-                  <div className="flex-1">
-                    <div className="font-medium break-all">{p.url}</div>
-                    <div className="text-xs text-gray-500">
-                      Saved at: {new Date(p.createdAt).toLocaleString()}
+                {/* Top row: title + URL */}
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base md:text-lg font-semibold text-slate-900">
+                    {p.title || "Untitled product"}
+                  </h3>
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2"
+                  >
+                    {p.url}
+                  </a>
+                </div>
+
+                {/* Middle: image + description */}
+                <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                  {p.imageUrl && (
+                    <div className="shrink-0">
+                      <img
+                        src={p.imageUrl}
+                        alt={p.title || "Product image"}
+                        className="h-32 w-32 rounded-xl border border-slate-200 object-cover"
+                      />
                     </div>
+                  )}
 
-                    {p.title && (
-                      <div className="mt-2">
-                        <div className="font-semibold">Title:</div>
-                        <div>{p.title}</div>
-                      </div>
-                    )}
-
-                    {p.vendor && (
-                      <div className="mt-1">
-                        <span className="font-semibold">Vendor:</span>{" "}
-                        {p.vendor}
-                      </div>
-                    )}
-
-                    {p.productType && (
-                      <div className="mt-1">
-                        <span className="font-semibold">Type:</span>{" "}
-                        {p.productType}
-                      </div>
-                    )}
-
-                    {p.price && (
-                      <div className="mt-1">
-                        <span className="font-semibold">Price:</span>{" "}
-                        <span>{p.price}</span>
-                      </div>
-                    )}
-
+                  <div className="space-y-2 text-sm text-slate-700">
                     {p.description && (
-                      <div className="mt-2">
-                        <div className="font-semibold">Description:</div>
-                        <div className="line-clamp-3">
-                          {p.description.replace(/<[^>]+>/g, "")}
-                        </div>
-                      </div>
+                      <p className="leading-relaxed line-clamp-4">
+                        {p.description}
+                      </p>
                     )}
 
-                    {parsedVariants.length > 0 && (
-                      <div className="mt-2">
-                        <div className="font-semibold">Variants:</div>
-                        <ul className="list-disc ml-4 text-xs">
-                          {parsedVariants.map((v, i) => (
-                            <li key={v.id ?? i}>
-                              {v.title} — {v.price}
-                              {v.sku ? ` (SKU: ${v.sku})` : ""}
-                              {v.available === false ? " (Out of stock)" : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                      {p.vendor && (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                          Vendor: {p.vendor}
+                        </span>
+                      )}
+                      {p.productType && (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                          Type: {p.productType}
+                        </span>
+                      )}
+                      {p.price && (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                          Price: {p.price}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-                    {parsedOptions.length > 0 && (
-                      <div className="mt-2">
-                        <div className="font-semibold">Options:</div>
-                        <ul className="list-disc ml-4 text-xs">
-                          {parsedOptions.map((o, i) => (
-                            <li key={i}>
-                              {o.name}:{" "}
-                              {Array.isArray(o.values)
-                                ? o.values.join(", ")
-                                : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
+                {/* Bottom row: actions */}
+                <div className="mt-2 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
+                  {/* Left: primary action — scrape OR generate */}
+                  <div className="flex items-center gap-3">
+                    {!scraped ? (
+                      <button
+                        onClick={() => handleScrape(p.id)}
+                        className="rounded-lg bg-blue-600 px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold text-white shadow-sm hover:bg-blue-500 transition"
+                      >
+                        Scrape from Shopify
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleGeneratePosts(p.id)}
+                        disabled={generateId === p.id}
+                        className="rounded-lg bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold text-white shadow-sm hover:from-cyan-400 hover:via-sky-400 hover:to-indigo-400 disabled:opacity-60 transition"
+                      >
+                        {generateId === p.id
+                          ? "Generating Reddit posts..."
+                          : "Generate Reddit posts"}
+                      </button>
                     )}
                   </div>
 
-                  {p.imageUrl && (
-                    <img
-                      src={p.imageUrl}
-                      alt={p.title || "Product image"}
-                      className="w-24 h-24 object-cover rounded border"
-                    />
-                  )}
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleScrape(p.id)}
-                    className="bg-gray-800 text-white px-3 py-1 rounded text-xs"
-                  >
-                    Scrape from Shopify
-                  </button>
-
+                  {/* Right: delete */}
                   <button
                     onClick={() => handleDelete(p.id)}
-                    className="bg-red-600 text-white px-3 py-1 rounded text-xs"
+                    className="rounded-lg border border-red-200 bg-red-50 px-4 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-medium text-red-700 hover:bg-red-100 hover:border-red-300 transition"
                   >
-                    Delete
-                  </button>
-
-                  <button
-                    onClick={() => handleGeneratePosts(p.id)}
-                    className="bg-green-600 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
-                    disabled={generatingFor === p.id}
-                  >
-                    {generatingFor === p.id
-                      ? "Generating..."
-                      : "Generate Reddit posts"}
+                    Delete product
                   </button>
                 </div>
-
-                {posts.length > 0 && (
-                  <div className="mt-3 border-t pt-2">
-                    <div className="font-semibold mb-1 text-sm">
-                      Generated Reddit posts:
-                    </div>
-                    <div className="space-y-3">
-                      {posts.map((post, i) => (
-                        <div
-                          key={i}
-                          className="rounded p-3 bg-blue-900 text-white text-xs space-y-2 shadow-sm"
-                        >
-                          <div className="font-semibold text-sm">{post.title}</div>
-
-                          {post.subreddit && (
-                            <div className="text-[11px] text-blue-200">
-                              Suggested subreddit: r/{post.subreddit}
-                            </div>
-                          )}
-
-                          <pre className="whitespace-pre-wrap text-[11px]">
-                            {post.body}
-                          </pre>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </li>
+              </div>
             );
           })}
-        </ul>
-      </div>
+        </section>
+      </main>
+
+      {/* ADD PRODUCT MODAL */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Add Shopify product
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Paste a product URL from your Shopify store. We&apos;ll use it
+                  to scrape the title, description, images, and more.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleAddProduct} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-700">
+                  Shopify product URL
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://yourstore.com/products/awesome-product"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loadingAdd}
+                  className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {loadingAdd ? "Adding..." : "Add product"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
