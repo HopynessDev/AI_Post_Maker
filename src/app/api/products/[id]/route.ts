@@ -1,29 +1,30 @@
 // src/app/api/products/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 
-type RouteParams = {
-    params: {
-        id: string;
-    };
+type RouteContext = {
+    params: Promise<{ id: string }>;
 };
 
-export async function DELETE(_req: Request, { params }: RouteParams) {
+export async function DELETE(_req: NextRequest, context: RouteContext) {
     try {
+        // In Next.js 16 app router, params is a Promise 🤦‍♂️
+        const { id } = await context.params;
+        const productId = Number(id);
+
+        if (Number.isNaN(productId)) {
+            return NextResponse.json(
+                { message: "A valid product id is required" },
+                { status: 400 }
+            );
+        }
+
         const user = await getCurrentUser();
         if (!user) {
             return NextResponse.json(
                 { message: "Not authenticated" },
                 { status: 401 }
-            );
-        }
-
-        const productId = Number(params.id);
-        if (Number.isNaN(productId)) {
-            return NextResponse.json(
-                { message: "A valid product id is required" },
-                { status: 400 }
             );
         }
 
