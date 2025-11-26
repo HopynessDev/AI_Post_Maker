@@ -14,6 +14,12 @@ type Product = {
   createdAt?: string;
 };
 
+type RedditPost = {
+  title: string;
+  body: string;
+  subreddit?: string;
+};
+
 export default function DashboardPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [url, setUrl] = useState("");
@@ -21,6 +27,17 @@ export default function DashboardPage() {
   const [loadingAdd, setLoadingAdd] = useState(false);
   const [generateId, setGenerateId] = useState<number | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [generatedPosts, setGeneratedPosts] = useState<
+    Record<number, RedditPost[]>
+  >({});
+  const [toast, setToast] = useState<
+    { message: string; type: "success" | "error" } | null
+  >(null);
+
+  function showToast(message: string, type: "success" | "error" = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  }
 
   // Load products on mount
   useEffect(() => {
@@ -29,7 +46,6 @@ export default function DashboardPage() {
         const res = await fetch("/api/products");
         const data = await res.json();
 
-        // Handle both { products: [...] } and plain array just in case
         if (Array.isArray(data)) {
           setProducts(data);
         } else if (Array.isArray(data.products)) {
@@ -40,6 +56,7 @@ export default function DashboardPage() {
       } catch (err) {
         console.error("Failed to load products", err);
         setProducts([]);
+        showToast("Failed to load products", "error");
       }
     }
     load();
@@ -65,12 +82,16 @@ export default function DashboardPage() {
         setProducts((prev) => [newProduct, ...prev]);
         setUrl("");
         setIsAddModalOpen(false);
+        showToast("Product added. Now scrape it to pull Shopify data.", "success");
       } else {
-        alert(data.message || data.error || "Failed to add product");
+        showToast(
+          data.message || data.error || "Failed to add product",
+          "error"
+        );
       }
     } catch (err) {
       console.error(err);
-      alert("Error adding product");
+      showToast("Error adding product", "error");
     } finally {
       setLoadingAdd(false);
     }
@@ -89,12 +110,13 @@ export default function DashboardPage() {
         setProducts((prev) =>
           prev.map((p) => (p.id === id ? { ...p, ...updated } : p))
         );
+        showToast("Product scraped from Shopify.", "success");
       } else {
-        alert(data.message || data.error || "Scrape failed");
+        showToast(data.message || data.error || "Scrape failed", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Scrape error");
+      showToast("Scrape error", "error");
     }
   }
 
@@ -109,13 +131,16 @@ export default function DashboardPage() {
 
       if (res.ok) {
         setProducts((prev) => prev.filter((p) => p.id !== id));
+        const { [id]: _, ...rest } = generatedPosts;
+        setGeneratedPosts(rest);
+        showToast("Product deleted.", "success");
       } else {
         const data = await res.json();
-        alert(data.message || data.error || "Delete failed");
+        showToast(data.message || data.error || "Delete failed", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Delete error");
+      showToast("Delete error", "error");
     }
   }
 
@@ -132,15 +157,26 @@ export default function DashboardPage() {
       const data = await res.json();
 
       if (res.ok) {
-        // You probably already show these somewhere in the UI
-        console.log("Generated posts:", data);
-        alert("Reddit posts generated successfully!");
+        let posts: RedditPost[] = [];
+
+        if (Array.isArray(data.posts)) {
+          posts = data.posts;
+        } else if (Array.isArray(data)) {
+          posts = data;
+        }
+
+        setGeneratedPosts((prev) => ({
+          ...prev,
+          [id]: posts,
+        }));
+
+        showToast("Reddit posts generated.", "success");
       } else {
-        alert(data.message || data.error || "Generation failed");
+        showToast(data.message || data.error || "Generation failed", "error");
       }
     } catch (e) {
       console.error(e);
-      alert("Error generating posts");
+      showToast("Error generating posts", "error");
     } finally {
       setGenerateId(null);
     }
@@ -241,6 +277,7 @@ export default function DashboardPage() {
 
           {products.map((p) => {
             const scraped = Boolean(p.title || p.description);
+            const posts = generatedPosts[p.id] || [];
 
             return (
               <div
@@ -333,6 +370,35 @@ export default function DashboardPage() {
                     Delete product
                   </button>
                 </div>
+
+                {/* Generated Reddit posts */}
+                {posts.length > 0 && (
+                  <div className="mt-3 space-y-3 border-t border-slate-200 pt-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Generated Reddit posts
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {posts.map((post, idx) => (
+                        <div
+                          key={idx}
+                          className="rounded-xl border border-sky-100 bg-sky-50/80 p-4 text-xs text-slate-800 shadow-sm"
+                        >
+                          <div className="text-[11px] font-medium text-sky-700 mb-1">
+                            {post.subreddit
+                              ? `r/${post.subreddit}`
+                              : "Suggested Reddit post"}
+                          </div>
+                          <div className="font-semibold text-slate-900 mb-1">
+                            {post.title}
+                          </div>
+                          <p className="text-[11px] leading-relaxed whitespace-pre-line">
+                            {post.body}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -393,6 +459,20 @@ export default function DashboardPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div
+            className={`rounded-xl px-4 py-3 text-sm shadow-lg border ${toast.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-red-50 border-red-200 text-red-800"
+              }`}
+          >
+            {toast.message}
           </div>
         </div>
       )}
