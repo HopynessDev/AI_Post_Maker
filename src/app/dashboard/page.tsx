@@ -126,8 +126,11 @@ export default function DashboardPage() {
 
     try {
       const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+
       if (res.ok) {
         setProducts((prev) => prev.filter((p) => p.id !== id));
+        const { [id]: _, ...rest } = generatedPosts;
+        setGeneratedPosts(rest);
         showToast("Product deleted.", "success");
       } else {
         let message = "Delete failed";
@@ -135,7 +138,7 @@ export default function DashboardPage() {
           const data = await res.json();
           message = data.message || data.error || message;
         } catch {
-          // response wasn't JSON, ignore
+          // Non-JSON error, ignore parsing
         }
         showToast(message, "error");
       }
