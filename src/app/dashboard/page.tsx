@@ -46,17 +46,18 @@ export default function DashboardPage() {
         const res = await fetch("/api/products");
         const data = await res.json();
 
-        if (Array.isArray(data)) {
-          setProducts(data);
-        } else if (Array.isArray(data.products)) {
+        console.log("API /api/products data:", data);
+
+        if (Array.isArray(data.products)) {
           setProducts(data.products);
+        } else if (Array.isArray(data)) {
+          setProducts(data);
         } else {
           setProducts([]);
         }
       } catch (err) {
         console.error("Failed to load products", err);
         setProducts([]);
-        showToast("Failed to load products", "error");
       }
     }
     load();
@@ -271,8 +272,7 @@ export default function DashboardPage() {
           <h2 className="text-lg font-semibold text-white drop-shadow-md">
             Your products
           </h2>
-
-
+          
           {products.length === 0 && (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
               You don&apos;t have any products yet.
@@ -294,7 +294,95 @@ export default function DashboardPage() {
                   key={p.id}
                   className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col gap-4"
                 >
-                  {/* ...rest of your card... */}
+                  {/* Top row: title + URL */}
+                  <div className="flex flex-col gap-1">
+                    <h3 className="text-base md:text-lg font-semibold text-slate-900">
+                      {p.title || "Untitled product"}
+                    </h3>
+                    <a
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2"
+                    >
+                      {p.url}
+                    </a>
+                  </div>
+
+                  {/* Middle: image + description */}
+                  <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                    {p.imageUrl && (
+                      <div className="shrink-0">
+                        <img
+                          src={p.imageUrl}
+                          alt={p.title || "Product image"}
+                          className="h-32 w-32 rounded-xl border border-slate-200 object-cover"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-2 text-sm text-slate-700">
+                      {p.description && (
+                        <p className="leading-relaxed line-clamp-4">
+                          {/* description may contain HTML; you can render raw or strip later */}
+                          <span
+                            dangerouslySetInnerHTML={{ __html: p.description }}
+                          />
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                        {p.vendor && (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                            Vendor: {p.vendor}
+                          </span>
+                        )}
+                        {p.productType && (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                            Type: {p.productType}
+                          </span>
+                        )}
+                        {p.price && (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                            Price: ${p.price}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom row: actions */}
+                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
+                    {/* Left: primary action — scrape OR generate */}
+                    <div className="flex items-center gap-3">
+                      {!scraped ? (
+                        <button
+                          onClick={() => handleScrape(p.id)}
+                          className="rounded-lg bg-blue-600 px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold text-white shadow-sm hover:bg-blue-500 transition"
+                        >
+                          Scrape from Shopify
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleGeneratePosts(p.id)}
+                          disabled={generateId === p.id}
+                          className="rounded-lg bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base font-semibold text-white shadow-sm hover:from-cyan-400 hover:via-sky-400 hover:to-indigo-400 disabled:opacity-60 transition"
+                        >
+                          {generateId === p.id
+                            ? "Generating Reddit posts..."
+                            : "Generate Reddit posts"}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Right: delete */}
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      className="rounded-lg border border-red-200 bg-red-50 px-4 md:px-5 py-2.5 md:py-3 text-xs md:text-sm font-medium text-red-700 hover:bg-red-100 hover:border-red-300 transition"
+                    >
+                      Delete product
+                    </button>
+                  </div>
 
                   {/* Generated Reddit posts */}
                   {posts.length > 0 && (
@@ -327,6 +415,7 @@ export default function DashboardPage() {
                 </div>
               );
             })}
+
 
         </section>
       </main>
